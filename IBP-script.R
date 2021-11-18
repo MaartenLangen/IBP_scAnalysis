@@ -70,19 +70,19 @@ hist(unique_genes_per_cell,breaks=100)
 
 # TODO: make thresholds based on histograms
 
-# TODO: normalize data
+### Normalize data
 
 # Use biomRT package to get access to WormBase ParaSite BioMart
 # Establish a connection to the WormBase ParaSite BioMart
 mart <- useMart("parasite_mart", dataset = "wbps_gene", host = "https://parasite.wormbase.org", port = 443)
 
 # List available filters that can be used in a query and attributes you can retrieve
-listFilters(mart)[1:10,]
-listAttributes(mart)[1:10,]
+listFilters(mart)[1:100,]
+listAttributes(mart)[1:100,]
 
-# Retrieve the start and end positions of the genes
+# Retrieve the start and end positions of the genes, as well as the GO terms
 gene_info <- getBM(filters="wbps_gene_id", 
-  attributes=c("wbps_gene_id", "start_position","end_position"), 
+  attributes=c("wbps_gene_id", "start_position","end_position","go_accession","go_name_1006"), 
   values=row.names(data_matrix), 
   mart=mart,
   uniqueRows=FALSE)
@@ -91,8 +91,10 @@ head(gene_info)
 # biomaRt doesn't return NA if it can find it, so the size could not match to the data_matrix
 # It also doesn't return results in the same order.
 
-# Calculate the gene length in Kilobases 
+# Calculate the gene length
 gene_info$length <- (gene_info$end_position - gene_info$start_position)
+gene_info <- gene_info[-c(2:3)]
+colnames(gene_info)[3] <- "go_name"
 head(gene_info)
 
 # Merge the length with the data_matrix
@@ -114,6 +116,9 @@ for (i in 1:nrow(data_matrix)){
 rpkm <- rpkm[,2:ncol(rpkm)]
 row.names(rpkm) <- data_matrix[,1]
 colnames(rpkm) <- colnames(data_matrix[,2:(ncol(data_matrix)-3)])
+# Generate a RPKM matrix with GO accession number and GO name at the last two columns
+rpkm <- cbind(rpkm, data_matrix[,ncol(data_matrix)-2])
+rpkm <- cbind(rpkm, data_matrix[,ncol(data_matrix)-1])
 rpkm[1:10,1:10]
 
 #BPSC
