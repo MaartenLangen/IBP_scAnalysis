@@ -97,11 +97,3 @@ gene_info$length <- (gene_info$end_position - gene_info$start_position)
 gene_info <- gene_info[-c(2:3)]
 colnames(gene_info)[3] <- "go_name"
 head(gene_info)
-
-# Merge the length with the data_matrix
-data_matrix <- merge(
-  as.data.frame(as.matrix(data_matrix)),
-  gene_info,
-  by.x=0,
-  by.y="wbps_gene_id"
-)
