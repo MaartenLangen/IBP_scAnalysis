@@ -1,71 +1,71 @@
 # Install the packages
-install.packages("devtools")
+# install.packages("devtools")
 library("devtools")
-install_github("nghiavtr/BPSC")
+# install_github("nghiavtr/BPSC")
 
-if (!requireNamespace("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-BiocManager::install("SingleCellExperiment")
-BiocManager::install("biomaRt")
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+# BiocManager::install("SingleCellExperiment")
+# BiocManager::install("biomaRt")
 
-install.packages("remotes")
-remotes::install_github("davismcc/scater")
+# install.packages("remotes")
+# remotes::install_github("davismcc/scater")
 
 # Load the packages
 library("BPSC")
 library("SingleCellExperiment")
 library("scater")
 library(biomaRt)
+library("Matrix")
 
-# Load the data (first 2500 genes, first 2500 cells) ---------------------------
-
+# Load the data
 
 # X..MatrixMarket references gene in excel file, matrix is replicate, coordinate
 # is count
 gene_by_cell_count_matrix <-
-  read.csv("C:/Users/oysdfx/Desktop/IBP/GSE126954_gene_by_cell_count_matrix.txt.gz", sep="")
-
-# Only look at the first 2500 genes and 2500 cells.
-gene_by_cell_count_matrix <- gene_by_cell_count_matrix[,1:3]
-gene_by_cell_count_matrix <- subset(gene_by_cell_count_matrix, X..MatrixMarket <= 2500)
-gene_by_cell_count_matrix <- subset(gene_by_cell_count_matrix, matrix <= 2500)
-head(gene_by_cell_count_matrix)
-
-# generate matrix where row=gene, column=replicate
-data_matrix = matrix(0,nrow=2500,ncol=2500)
-
-for (i in 2:nrow(gene_by_cell_count_matrix)){
-  geneID = gene_by_cell_count_matrix$X..MatrixMarket[i]
-  repl = gene_by_cell_count_matrix$matrix[i]
-  count = gene_by_cell_count_matrix$coordinate[i]
-  data_matrix[geneID,repl]=count
-}
+  read.csv("GSE126954_gene_by_cell_count_matrix.txt", sep = "")[,1:3]
 
 # load gene and cell annotations
-gene_annotation <- read.csv("GSE126954_gene_annotation.csv")[1:2500,2:3]
-cell_annotation <- read.csv("GSE126954_cell_annotation.csv")[1:2500,-1]
+gene_annotation <- read.csv("GSE126954_gene_annotation.csv")[,2:3]
+cell_annotation <- read.csv("GSE126954_cell_annotation.csv")[,-1]
 
-row.names(data_matrix) <- gene_annotation[1:2500,1]
-colnames(data_matrix) <- cell_annotation[1:2500,1]
+cells_bin = cell_annotation[cell_annotation$raw.embryo.time.bin=="330-390",]
+
+# generate matrix where row=gene, column=replicate
+data_matrix = sparseMatrix(i=gene_by_cell_count_matrix$X..MatrixMarket,
+                          j=gene_by_cell_count_matrix$matrix,
+                          x=gene_by_cell_count_matrix$coordinate
+                           )
+
+rownames(data_matrix)=gene_annotation[,1]
+colnames(data_matrix)=cell_annotation[,1]
+
+data_matrix = data_matrix[,as.numeric(unlist(rownames(cells_bin)))]
+
+# create SCE object
+sce <- SingleCellExperiment(
+  assays = list(counts = data_matrix),
+  rowData = data.frame(gene_names = gene_annotation[,1]),
+  colData = data.frame(cell_names = cell_annotation[,1])
+)
 
 # Cleaning the dataset ---------------------------------------------------------
 
 ## Remove genes that are not expressed in any cell -----------------------------
-keep_feature <- rowSums(data_matrix > 0) > 0
-data_matrix <- data_matrix[keep_feature,]
-data_matrix[1:10,1:10]
+keep_feature <- rowSums(counts(sce) > 0) > 0
+sce_filtered <- SingleCellExperiment(
+  assays = list(counts = counts(sce)[keep_feature, ]),
+  rowData = data.frame(gene_names = rowData(sce)[keep_feature,]),
+  colData = data.frame(cell_names = colData(sce))
+)
 
 ## Quality control: ------------------------------------------------------------
-counts_per_cell = colSums(data_matrix)
-hist(counts_per_cell, breaks = 100)
+sce_filtered <- addPerCellQC(sce_filtered)
+sce_filtered <- addPerFeatureQC(sce_filtered)
 
-unique_genes_per_cell <- c(1:2500)
+hist(sce_filtered$total, breaks = 100) #hist of counts per cell
 
-for (i in 1:ncol(data_matrix)){
-  column = data_matrix[,i]
-  unique_genes_per_cell[i] <- length(column[column>0]) # genes expressed
-}
-
+unique_genes_per_cell <- colSums(counts(sce)>0)
 hist(unique_genes_per_cell,breaks=100)
 
 # TODO: make thresholds based on histograms
