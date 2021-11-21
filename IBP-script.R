@@ -97,3 +97,16 @@ gene_info$length <- (gene_info$end_position - gene_info$start_position)
 gene_info <- gene_info[-c(2:3)]
 colnames(gene_info)[3] <- "go_name"
 head(gene_info)
+
+
+
+
+###iDEA
+#calculate variance
+#Here the first results is used!!
+pvalue <- results[,2] #### the pvalue column
+zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
+fc <- results[,1] ## the fold change column
+se_beta <- abs(fc/zscore) ## to approximate the standard error of beta
+var = se_beta^2  ### square 
+summary = data.frame(fc = fc,variance = var)# Summary is a matrix of fold change and variance of each gene
