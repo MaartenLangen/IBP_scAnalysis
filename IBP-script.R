@@ -197,10 +197,86 @@ head(gene_info)
 
 ###iDEA
 #calculate variance
-#Here the first results is used!!
+#Here the first results(only two cell types) is used!!
 pvalue <- results[,2] #### the pvalue column
 zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
 fc <- results[,1] ## the fold change column
 se_beta <- abs(fc/zscore) ## to approximate the standard error of beta
 var = se_beta^2  ### square 
 summary = data.frame(fc = fc,variance = var)# Summary is a matrix of fold change and variance of each gene
+#get annotation data
+#know how many go terms we have
+length(unique(gene_info$go_name))#2768
+annotation<-matrix(0,nrow =nrow(summary) ,ncol = 2768)
+rownames(annotation)<-rownames(summary)
+colnames(annotation)<-unique(gene_info$go_name)
+for (i in 1:nrow(annotation)) {
+  for (j in 1:ncol(annotation)) {
+    index<-which(gene_info$wbps_gene_id==rownames(annotation)[i])
+    for (k in 1:length(index)) {
+      if(gene_info$go_name[k]==colnames(annotation)[j]) {
+        annotation[i,j]=1
+    }
+    
+    }
+  }
+ 
+}
+
+#install iDEA package
+devtools::install_github('xzhoulab/iDEA')
+library(iDEA)
+#create idea object
+idea<-CreateiDEAObject(summary,annotation)
+#Fit the model
+idea <- iDEA.fit(idea)
+#correct p-values
+idea <- iDEA.louis(idea)
+#get output
+idea@gsea
+
+#Until now it's just for comparison of two cell types, so the following code is for adding the iDea analysis to the "for loop" for several pair-wise comparisons.
+# Create a list for BPSC + fold change results
+results <- list()
+results_iDEA<-list()
+for (i in 1:nrow(combinations)){
+  #Define the two groups to be compared (Remember of remove 1:20 when we run it for the whole data containing all the cells in a time bin!!!)
+  control.mat=sce_cpm[1:20,cell_indices[[combinations[i,1]]]]
+  treated.mat=sce_cpm[1:20,cell_indices[[combinations[i,2]]]]
+  #Create a data set by merging the control group and the treated group
+  bp.mat=cbind(control.mat,treated.mat)
+  rownames(bp.mat)=c(1:nrow(bp.mat))
+  colnames(bp.mat)=c(1:ncol(bp.mat))
+  group=c(rep(1,ncol(control.mat)),rep(2,ncol(treated.mat)))
+  #Run BPglm for differential expression analysis
+  res=BPglm(data=bp.mat, controlIds=which(lapply(group, as.numeric)==1), design=model.matrix(~group), coef=2, estIntPar=FALSE, useParallel=FALSE)
+  #Fold change
+  fc=apply(treated.mat,1,mean)/apply(control.mat,1,mean)
+  fc
+  # BPSC + fold change results
+  result <- t(rbind(fc,res$PVAL))
+  colnames(result) <- c('Fold change','P-value')
+  results[[paste(unique_cell_types[combinations[i,1]],unique_cell_types[combinations[i,2]], sep=" vs. ")]]=result
+  
+  #iDEA
+  #calculate variance
+  pvalue <- res$PVA
+  zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
+  se_beta <- abs(fc/zscore) ## to approximate the standard error of beta
+  var = se_beta^2  ### square 
+  summary = data.frame(fc = fc,variance = var)# Summary is a matrix of fold change and variance of each gene
+  #create idea object
+  idea<-CreateiDEAObject(summary,annotation)
+  #Fit the model
+  idea <- iDEA.fit(idea)
+  #correct p-values
+  idea <- iDEA.louis(idea)
+  #Save all results matrix in a list
+  results_iDEA[[i]]<-idea@gsea
+} 
+
+
+
+
+
+
