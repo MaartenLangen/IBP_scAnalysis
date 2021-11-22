@@ -172,7 +172,7 @@ for (i in 1:nrow(param.control)){
   var.control = varBP(alp=param.control[i,1],bet=param.control[i,2],lam1=param.control[i,3], lam2=param.control[i,4])
   var.treated = varBP(alp=param.treated[i,1],bet=param.treated[i,2],lam1=param.treated[i,3], lam2=param.treated[i,4])
   foldChange = mean.control/mean.treated
-  varFoldChange = foldChange*sqrt((var.control/mean.control)^2+(var.treated/mean.treated)^2)
+  varFoldChange = foldChange*sqrt((sqrt(var.control)/mean.control)^2+(sqrt(var.treated)/mean.treated)^2)
   fc=rbind(fc,c(foldChange,varFoldChange))
 }
 colnames(fc) = c("foldChange","variance")
