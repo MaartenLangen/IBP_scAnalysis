@@ -84,7 +84,7 @@ sce_cpm[1:5,1:5]
 # cell_annotation[,6] contains the cell types we need.
 # We use them to split the data into groups containing gene expression of different cell types
 # dimnames(sce_cpm)[[2]] contains the column names of the sparse matrix
-cell_type <- cell_annotation[cell_annotation$cell==dimnames(sce_cpm)[[2]],6] 
+cell_type <- subset(cell_annotation, cell_annotation$cell %in% colnames(sce_cpm))[,6]
 
 # Unique values in the vector cell_type that is not NA
 # We do not want to take the type-unidentified (na) cells into the differential expression analysis
@@ -121,7 +121,7 @@ design=model.matrix(~group)
 #Select the column in the design matrix corresponding to the coefficient (the group label) for the GLM model testing
 coef=2 
 #Run BPglm for differential expression analysis
-res=BPglm(data=bp.mat, controlIds=controlIds, design=design, coef=coef, estIntPar=FALSE, useParallel=FALSE) 
+res=BPglm(data=bp.mat, controlIds=controlIds, design=design, coef=coef, estIntPar=FALSE, useParallel=FALSE, keepFit = FALSE) 
 #Plot the p-value distribution
 res$PVAL
 hist(res$PVAL, breaks=20)
@@ -134,6 +134,49 @@ fc # the NA values indicates division by zero
 results <- t(rbind(fc,res$PVAL))
 colnames(results) <- c('Fold change','P-value')
 results
+
+# use BPSC to calculate fold change and variance
+# To do this, first we need to fit parameters to all sets (independent for control and treated)
+mat.control.res = estimateBPMatrix(dataMat = control.mat, para.num = 4, estIntPar = TRUE)
+mat.treated.res = estimateBPMatrix(dataMat = treated.mat, para.num = 4, estIntPar = TRUE)
+# put the parameters in nice matrices
+pc = matrix(unlist(mat.control.res$bp.model.list[names(mat.control.res$bp.model.list)=="par"]), ncol=4, byrow=TRUE)
+pt = matrix(unlist(mat.treated.res$bp.model.list[names(mat.treated.res$bp.model.list)=="par"]), ncol=4, byrow=TRUE)
+k=1
+l=1
+param.control = NULL
+param.treated = NULL
+for (i in 1:nrow(control.mat)){
+  if (i %in% mat.control.res$ind.set){
+    param.control = rbind(param.control, pc[k,])
+    k = k+1
+  } else {
+    param.control = rbind(param.control, c(NA, NA, NA, NA))
+  }
+  if (i %in% mat.treated.res$ind.set){
+    param.treated = rbind(param.treated, pt[l,])
+    l = l+1
+  } else {
+    param.treated = rbind(param.treated, c(NA, NA, NA, NA))
+  }
+}
+rownames(param.control) = rownames(control.mat)
+rownames(param.treated) = rownames(treated.mat)
+
+# use these matrices to calculate fold change and variance
+fc = NULL
+fc.var = NULL
+for (i in 1:nrow(param.control)){
+  mean.control = meanBP(alp=param.control[i,1],bet=param.control[i,2],lam1=param.control[i,3], lam2=param.control[i,4])
+  mean.treated = meanBP(alp=param.treated[i,1],bet=param.treated[i,2],lam1=param.treated[i,3], lam2=param.treated[i,4])
+  var.control = varBP(alp=param.control[i,1],bet=param.control[i,2],lam1=param.control[i,3], lam2=param.control[i,4])
+  var.treated = varBP(alp=param.treated[i,1],bet=param.treated[i,2],lam1=param.treated[i,3], lam2=param.treated[i,4])
+  foldChange = mean.control/mean.treated
+  varFoldChange = foldChange*sqrt((var.control/mean.control)^2+(var.treated/mean.treated)^2)
+  fc=rbind(fc,c(foldChange,varFoldChange))
+}
+colnames(fc) = c("foldChange","variance")
+
 
 ## Generalize the small test to all possible combinations of cell types
 # Generate all combinations of numbers from 1 to the number of cell types, taken 2 at a time
