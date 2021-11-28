@@ -84,7 +84,7 @@ sce_cpm[1:5,1:5]
 # cell_annotation[,6] contains the cell types we need.
 # We use them to split the data into groups containing gene expression of different cell types
 # dimnames(sce_cpm)[[2]] contains the column names of the sparse matrix
-cell_type <- cell_annotation[cell_annotation$cell==dimnames(sce_cpm)[[2]],6] 
+cell_type <- cell_annotation[cell_annotation$cell %in% dimnames(sce_cpm)[[2]],6] 
 
 # Unique values in the vector cell_type that is not NA
 # We do not want to take the type-unidentified (na) cells into the differential expression analysis
