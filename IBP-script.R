@@ -234,6 +234,8 @@ idea <- iDEA.fit(idea)
 idea <- iDEA.louis(idea)
 #get output
 idea@gsea
+#DE analysis of individual genes
+
 
 #Until now it's just for comparison of two cell types, so the following code is for adding the iDea analysis to the "for loop" for several pair-wise comparisons.
 # Create a list for BPSC + fold change results
