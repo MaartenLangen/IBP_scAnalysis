@@ -84,7 +84,7 @@ sce_cpm[1:5,1:5]
 # cell_annotation[,6] contains the cell types we need.
 # We use them to split the data into groups containing gene expression of different cell types
 # dimnames(sce_cpm)[[2]] contains the column names of the sparse matrix
-cell_type <- cell_annotation[cell_annotation$cell==dimnames(sce_cpm)[[2]],6] 
+cell_type <- cell_annotation[cell_annotation$cell %in% dimnames(sce_cpm)[[2]],6] 
 
 # Unique values in the vector cell_type that is not NA
 # We do not want to take the type-unidentified (na) cells into the differential expression analysis
@@ -176,23 +176,23 @@ head(gene_info)
 ###iDEA
 #calculate variance
 #Here the first results(only two cell types) is used!!
-pvalue <- results[,2] #### the pvalue column
+pvalue <- results$`P-value` #### the pvalue column
 zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
-fc <- results[,1] ## the fold change column
+fc <- results$logFC ## the fold change column
 se_beta <- abs(fc/zscore) ## to approximate the standard error of beta
 var = se_beta^2  ### square 
-summary = data.frame(fc = fc,variance = var)# Summary is a matrix of fold change and variance of each gene
+summary = data.frame(fc = fc,variance = var,row.names = results$gene)# Summary is a matrix of fold change and variance of each gene
 #get annotation data
 #know how many go terms we have
-length(unique(gene_info$go_name))#2768
-annotation<-matrix(0,nrow =nrow(summary) ,ncol = 2768)
-rownames(annotation)<-rownames(summary)
-colnames(annotation)<-unique(gene_info$go_name)
+length(unique(gene_info$go_name))#6907
+annotation<-matrix(0,nrow =nrow(summary) ,ncol = 6907)
+rownames(annotation)<-results$gene
+colnames(annotation)<-unique(gene_info$go_name_1006)
 for (i in 1:nrow(annotation)) {
   for (j in 1:ncol(annotation)) {
     index<-which(gene_info$wbps_gene_id==rownames(annotation)[i])
     for (k in 1:length(index)) {
-      if(gene_info$go_name[k]==colnames(annotation)[j]) {
+      if(gene_info$go_name_1006[k]==colnames(annotation)[j]) {
         annotation[i,j]=1
     }
     
@@ -262,27 +262,51 @@ for (i in 1:nrow(combinations)){
   colnames(results) <- c('gene','logFC','P-value')
   results[[paste(unique_cell_types[combinations[i,1]],unique_cell_types[combinations[i,2]], sep=" vs. ")]]=result
   
-  #iDEA
+  ###iDEA
   #calculate variance
-  pvalue <- res$PVA
+  #Here the first results(only two cell types) is used!!
+  pvalue <- results$`P-value` #### the pvalue column
   zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
+  fc <- results$logFC ## the fold change column
   se_beta <- abs(fc/zscore) ## to approximate the standard error of beta
   var = se_beta^2  ### square 
-  summary = data.frame(fc = fc,variance = var)# Summary is a matrix of fold change and variance of each gene
+  summary = data.frame(fc = fc,variance = var,row.names = results$gene)# Summary is a matrix of fold change and variance of each gene
+  #get annotation data
+  #know how many go terms we have
+  length(unique(gene_info$go_name))#6907
+  annotation<-matrix(0,nrow =nrow(summary) ,ncol = 6907)
+  rownames(annotation)<-results$gene
+  colnames(annotation)<-unique(gene_info$go_name_1006)
+  for (i in 1:nrow(annotation)) {
+    for (j in 1:ncol(annotation)) {
+      index<-which(gene_info$wbps_gene_id==rownames(annotation)[i])
+      for (k in 1:length(index)) {
+        if(gene_info$go_name_1006[k]==colnames(annotation)[j]) {
+          annotation[i,j]=1
+        }
+        
+      }
+    }
+    
+  }
+  
+  #install iDEA package
+  devtools::install_github('xzhoulab/iDEA')
+  library(iDEA)
   #create idea object
   idea<-CreateiDEAObject(summary,annotation)
   #Fit the model
   idea <- iDEA.fit(idea)
   #correct p-values
   idea <- iDEA.louis(idea)
-  #Save all results matrix in a list
-  results_iDEA[[i]]<-idea@gsea
+  #get output
+  idea@gsea
   #DE analysis of individual gene
   #with pre-selected genes
   pip = unlist(idea@de[["membrane"]]$pip)
   head(pip)
   #without pre-selected genes
-  idea <- iDEA.BMA(idea) ##
+  idea <- iDEA.BMA(idea)
   head(idea@BMA_pip)
 } 
 
