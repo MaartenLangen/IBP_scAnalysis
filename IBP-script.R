@@ -102,6 +102,22 @@ for (i in 1:length(unique_cell_types)){
 cell_indices[[1]][1:5]
 cell_indices[['Body_wall_muscle']][1:5]
 
+
+### Use MAST to compute logFC based on the raw counts
+control.countData=sce_filtered[1:20,cell_indices[[1]]]
+treated.countData=sce_filtered[1:20,cell_indices[[2]]]
+countData <- cbind(control.countData,treated.countData)
+cellType <- rep(c(1,2), c(ncol(control.countData),ncol(treated.countData)))
+cellType <- as.data.frame(cellType)
+colnames(cellType) <- "CellType"
+colData(countData) <- cbind(colData(countData),cellType)
+head(colData(countData),3)
+colData(countData)$CellType<-factor(colData(countData)$CellType)
+countData<-SceToSingleCellAssay(countData, class = "SingleCellAssay",check_sanity = FALSE)
+zlmCond <- zlm(~CellType, countData)
+logFC<-getLogFC(zlmCond)[,c(1,3)]
+logFC
+
 ### Differential expression analysis using BPSC 
 # (Here we take only the first 20 genes to run a quick small test because BPSC takes a bit long time to run)
 
@@ -127,42 +143,12 @@ res$PVAL
 hist(res$PVAL, breaks=20)
 #Summarize the resutls
 summary(res)
-#Fold change
-fc=apply(treated.mat,1,mean)/apply(control.mat,1,mean)
-fc # the NA values indicates division by zero
-# BPSC + fold change results
-results <- t(rbind(fc,res$PVAL))
-colnames(results) <- c('Fold change','P-value')
-results
 
-## Generalize the small test to all possible combinations of cell types
-# Generate all combinations of numbers from 1 to the number of cell types, taken 2 at a time
-combinations <- expand.grid(1:length(unique_cell_types), 1:length(unique_cell_types))
-head(combinations)
-combinations <- combinations[combinations$Var1 != combinations$Var2,]
-head(combinations)
-nrow((combinations)) # number of combinations
-# Create a list for BPSC + fold change results
-results <- list()
-for (i in 1:nrow(combinations)){
-  #Define the two groups to be compared (Remember of remove 1:20 when we run it for the whole data containing all the cells in a time bin!!!)
-  control.mat=sce_cpm[1:20,cell_indices[[combinations[i,1]]]]
-  treated.mat=sce_cpm[1:20,cell_indices[[combinations[i,2]]]]
-  #Create a data set by merging the control group and the treated group
-  bp.mat=cbind(control.mat,treated.mat)
-  rownames(bp.mat)=c(1:nrow(bp.mat))
-  colnames(bp.mat)=c(1:ncol(bp.mat))
-  group=c(rep(1,ncol(control.mat)),rep(2,ncol(treated.mat)))
-  #Run BPglm for differential expression analysis
-  res=BPglm(data=bp.mat, controlIds=which(lapply(group, as.numeric)==1), design=model.matrix(~group), coef=2, estIntPar=FALSE, useParallel=FALSE)
-  #Fold change
-  fc=apply(treated.mat,1,mean)/apply(control.mat,1,mean)
-  fc
-  # BPSC + fold change results
-  result <- t(rbind(fc,res$PVAL))
-  colnames(result) <- c('Fold change','P-value')
-  results[[paste(unique_cell_types[combinations[i,1]],unique_cell_types[combinations[i,2]], sep=" vs. ")]]=result
-} 
+# Log fold change + p-value from BPSC results
+PVAL<-as.data.frame(res$PVAL)
+results <- cbind(logFC,res$PVAL)
+colnames(results) <- c('gene','logFC','P-value')
+results
 
 
 
@@ -175,21 +161,13 @@ mart <- useMart("parasite_mart", dataset = "wbps_gene", host = "https://parasite
 listFilters(mart)[1:100,]
 listAttributes(mart)[1:100,]
 
-# Retrieve the start and end positions of the genes, as well as the GO terms
+# Retrieve the GO terms
 gene_info <- getBM(filters="wbps_gene_id", 
-  attributes=c("wbps_gene_id", "start_position","end_position","go_accession","go_name_1006"), 
+  attributes=c("wbps_gene_id", "go_accession","go_name_1006"), 
   values=row.names(data_matrix), 
   mart=mart,
   uniqueRows=FALSE)
 dim(gene_info) 
-head(gene_info)
-# biomaRt doesn't return NA if it can find it, so the size could not match to the data_matrix
-# It also doesn't return results in the same order.
-
-# Calculate the gene length (do not need it)
-gene_info$length <- (gene_info$end_position - gene_info$start_position)
-gene_info <- gene_info[-c(2:3)]
-colnames(gene_info)[3] <- "go_name"
 head(gene_info)
 
 
@@ -235,8 +213,17 @@ idea <- iDEA.louis(idea)
 #get output
 idea@gsea
 
+
+## Generalize the small test to all possible combinations of cell types
+# Generate all combinations of numbers from 1 to the number of cell types, taken 2 at a time
+combinations <- expand.grid(1:length(unique_cell_types), 1:length(unique_cell_types))
+head(combinations)
+combinations <- combinations[combinations$Var1 != combinations$Var2,]
+head(combinations)
+nrow((combinations)) # number of combinations
+
 #Until now it's just for comparison of two cell types, so the following code is for adding the iDea analysis to the "for loop" for several pair-wise comparisons.
-# Create a list for BPSC + fold change results
+# Create a list for log fold change + p-value from BPSC results
 results <- list()
 results_iDEA<-list()
 for (i in 1:nrow(combinations)){
@@ -250,12 +237,23 @@ for (i in 1:nrow(combinations)){
   group=c(rep(1,ncol(control.mat)),rep(2,ncol(treated.mat)))
   #Run BPglm for differential expression analysis
   res=BPglm(data=bp.mat, controlIds=which(lapply(group, as.numeric)==1), design=model.matrix(~group), coef=2, estIntPar=FALSE, useParallel=FALSE)
-  #Fold change
-  fc=apply(treated.mat,1,mean)/apply(control.mat,1,mean)
-  fc
-  # BPSC + fold change results
-  result <- t(rbind(fc,res$PVAL))
-  colnames(result) <- c('Fold change','P-value')
+  
+  # Use MAST to compute logFC based on the raw counts
+  control.countData=sce_filtered[1:20,cell_indices[[combinations[i,1]]]]
+  treated.countData=sce_filtered[1:20,cell_indices[[combinations[i,2]]]]
+  countData <- cbind(control.countData,treated.countData)
+  cellType <- as.data.frame(rep(c(1,2), c(ncol(control.countData),ncol(treated.countData))))
+  colnames(cellType) <- "CellType"
+  colData(countData) <- cbind(colData(countData),cellType)
+  colData(countData)$CellType<-factor(colData(countData)$CellType)
+  countData<-SceToSingleCellAssay(countData, class = "SingleCellAssay",check_sanity = FALSE)
+  zlmCond <- zlm(~cellType, countData)
+  logFC<-getLogFC(zlmCond)[,c(1,3)]
+  
+  # Log fold change + p-value from BPSC
+  PVAL<-as.data.frame(res$PVAL)
+  result <- cbind(logFC,res$PVAL)
+  colnames(results) <- c('gene','logFC','P-value')
   results[[paste(unique_cell_types[combinations[i,1]],unique_cell_types[combinations[i,2]], sep=" vs. ")]]=result
   
   #iDEA
