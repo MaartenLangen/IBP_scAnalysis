@@ -212,7 +212,13 @@ idea <- iDEA.fit(idea)
 idea <- iDEA.louis(idea)
 #get output
 idea@gsea
-
+#DE analysis of individual gene
+#with pre-selected genes
+pip = unlist(idea@de[["membrane"]]$pip)
+head(pip)
+#without pre-selected genes
+idea <- iDEA.BMA(idea)
+head(idea@BMA_pip)
 
 ## Generalize the small test to all possible combinations of cell types
 # Generate all combinations of numbers from 1 to the number of cell types, taken 2 at a time
@@ -271,6 +277,13 @@ for (i in 1:nrow(combinations)){
   idea <- iDEA.louis(idea)
   #Save all results matrix in a list
   results_iDEA[[i]]<-idea@gsea
+  #DE analysis of individual gene
+  #with pre-selected genes
+  pip = unlist(idea@de[["membrane"]]$pip)
+  head(pip)
+  #without pre-selected genes
+  idea <- iDEA.BMA(idea) ##
+  head(idea@BMA_pip)
 } 
 
 
