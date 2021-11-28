@@ -84,7 +84,7 @@ sce_cpm[1:5,1:5]
 # cell_annotation[,6] contains the cell types we need.
 # We use them to split the data into groups containing gene expression of different cell types
 # dimnames(sce_cpm)[[2]] contains the column names of the sparse matrix
-cell_type <- subset(cell_annotation, cell_annotation$cell %in% colnames(sce_cpm))[,6]
+cell_type <- cell_annotation[cell_annotation$cell==dimnames(sce_cpm)[[2]],6] 
 
 # Unique values in the vector cell_type that is not NA
 # We do not want to take the type-unidentified (na) cells into the differential expression analysis
@@ -101,6 +101,22 @@ for (i in 1:length(unique_cell_types)){
 # We can retrieve the cell indices of a cell type  by either the index of the list, or the cell type such as 'Body_wall_muscle'
 cell_indices[[1]][1:5]
 cell_indices[['Body_wall_muscle']][1:5]
+
+
+### Use MAST to compute logFC based on the raw counts
+control.countData=sce_filtered[1:20,cell_indices[[1]]]
+treated.countData=sce_filtered[1:20,cell_indices[[2]]]
+countData <- cbind(control.countData,treated.countData)
+cellType <- rep(c(1,2), c(ncol(control.countData),ncol(treated.countData)))
+cellType <- as.data.frame(cellType)
+colnames(cellType) <- "CellType"
+colData(countData) <- cbind(colData(countData),cellType)
+head(colData(countData),3)
+colData(countData)$CellType<-factor(colData(countData)$CellType)
+countData<-SceToSingleCellAssay(countData, class = "SingleCellAssay",check_sanity = FALSE)
+zlmCond <- zlm(~CellType, countData)
+logFC<-getLogFC(zlmCond)[,c(1,3)]
+logFC
 
 ### Differential expression analysis using BPSC 
 # (Here we take only the first 20 genes to run a quick small test because BPSC takes a bit long time to run)
@@ -121,91 +137,18 @@ design=model.matrix(~group)
 #Select the column in the design matrix corresponding to the coefficient (the group label) for the GLM model testing
 coef=2 
 #Run BPglm for differential expression analysis
-res=BPglm(data=bp.mat, controlIds=controlIds, design=design, coef=coef, estIntPar=FALSE, useParallel=FALSE, keepFit = FALSE) 
+res=BPglm(data=bp.mat, controlIds=controlIds, design=design, coef=coef, estIntPar=FALSE, useParallel=FALSE) 
 #Plot the p-value distribution
 res$PVAL
 hist(res$PVAL, breaks=20)
 #Summarize the resutls
 summary(res)
-#Fold change
-fc=apply(treated.mat,1,mean)/apply(control.mat,1,mean)
-fc # the NA values indicates division by zero
-# BPSC + fold change results
-results <- t(rbind(fc,res$PVAL))
-colnames(results) <- c('Fold change','P-value')
+
+# Log fold change + p-value from BPSC results
+PVAL<-as.data.frame(res$PVAL)
+results <- cbind(logFC,res$PVAL)
+colnames(results) <- c('gene','logFC','P-value')
 results
-
-# use BPSC to calculate fold change and variance
-# To do this, first we need to fit parameters to all sets (independent for control and treated)
-mat.control.res = estimateBPMatrix(dataMat = control.mat, para.num = 4, estIntPar = TRUE)
-mat.treated.res = estimateBPMatrix(dataMat = treated.mat, para.num = 4, estIntPar = TRUE)
-# put the parameters in nice matrices
-pc = matrix(unlist(mat.control.res$bp.model.list[names(mat.control.res$bp.model.list)=="par"]), ncol=4, byrow=TRUE)
-pt = matrix(unlist(mat.treated.res$bp.model.list[names(mat.treated.res$bp.model.list)=="par"]), ncol=4, byrow=TRUE)
-k=1
-l=1
-param.control = NULL
-param.treated = NULL
-for (i in 1:nrow(control.mat)){
-  if (i %in% mat.control.res$ind.set){
-    param.control = rbind(param.control, pc[k,])
-    k = k+1
-  } else {
-    param.control = rbind(param.control, c(NA, NA, NA, NA))
-  }
-  if (i %in% mat.treated.res$ind.set){
-    param.treated = rbind(param.treated, pt[l,])
-    l = l+1
-  } else {
-    param.treated = rbind(param.treated, c(NA, NA, NA, NA))
-  }
-}
-rownames(param.control) = rownames(control.mat)
-rownames(param.treated) = rownames(treated.mat)
-
-# use these matrices to calculate fold change and variance
-fc = NULL
-fc.var = NULL
-for (i in 1:nrow(param.control)){
-  mean.control = meanBP(alp=param.control[i,1],bet=param.control[i,2],lam1=param.control[i,3], lam2=param.control[i,4])
-  mean.treated = meanBP(alp=param.treated[i,1],bet=param.treated[i,2],lam1=param.treated[i,3], lam2=param.treated[i,4])
-  var.control = varBP(alp=param.control[i,1],bet=param.control[i,2],lam1=param.control[i,3], lam2=param.control[i,4])
-  var.treated = varBP(alp=param.treated[i,1],bet=param.treated[i,2],lam1=param.treated[i,3], lam2=param.treated[i,4])
-  foldChange = mean.control/mean.treated
-  varFoldChange = foldChange*sqrt((sqrt(var.control)/mean.control)^2+(sqrt(var.treated)/mean.treated)^2)
-  fc=rbind(fc,c(foldChange,varFoldChange))
-}
-colnames(fc) = c("foldChange","variance")
-
-
-## Generalize the small test to all possible combinations of cell types
-# Generate all combinations of numbers from 1 to the number of cell types, taken 2 at a time
-combinations <- expand.grid(1:length(unique_cell_types), 1:length(unique_cell_types))
-head(combinations)
-combinations <- combinations[combinations$Var1 != combinations$Var2,]
-head(combinations)
-nrow((combinations)) # number of combinations
-# Create a list for BPSC + fold change results
-results <- list()
-for (i in 1:nrow(combinations)){
-  #Define the two groups to be compared (Remember of remove 1:20 when we run it for the whole data containing all the cells in a time bin!!!)
-  control.mat=sce_cpm[1:20,cell_indices[[combinations[i,1]]]]
-  treated.mat=sce_cpm[1:20,cell_indices[[combinations[i,2]]]]
-  #Create a data set by merging the control group and the treated group
-  bp.mat=cbind(control.mat,treated.mat)
-  rownames(bp.mat)=c(1:nrow(bp.mat))
-  colnames(bp.mat)=c(1:ncol(bp.mat))
-  group=c(rep(1,ncol(control.mat)),rep(2,ncol(treated.mat)))
-  #Run BPglm for differential expression analysis
-  res=BPglm(data=bp.mat, controlIds=which(lapply(group, as.numeric)==1), design=model.matrix(~group), coef=2, estIntPar=FALSE, useParallel=FALSE)
-  #Fold change
-  fc=apply(treated.mat,1,mean)/apply(control.mat,1,mean)
-  fc
-  # BPSC + fold change results
-  result <- t(rbind(fc,res$PVAL))
-  colnames(result) <- c('Fold change','P-value')
-  results[[paste(unique_cell_types[combinations[i,1]],unique_cell_types[combinations[i,2]], sep=" vs. ")]]=result
-} 
 
 
 
@@ -218,19 +161,120 @@ mart <- useMart("parasite_mart", dataset = "wbps_gene", host = "https://parasite
 listFilters(mart)[1:100,]
 listAttributes(mart)[1:100,]
 
-# Retrieve the start and end positions of the genes, as well as the GO terms
+# Retrieve the GO terms
 gene_info <- getBM(filters="wbps_gene_id", 
-  attributes=c("wbps_gene_id", "start_position","end_position","go_accession","go_name_1006"), 
+  attributes=c("wbps_gene_id", "go_accession","go_name_1006"), 
   values=row.names(data_matrix), 
   mart=mart,
   uniqueRows=FALSE)
 dim(gene_info) 
 head(gene_info)
-# biomaRt doesn't return NA if it can find it, so the size could not match to the data_matrix
-# It also doesn't return results in the same order.
 
-# Calculate the gene length (do not need it)
-gene_info$length <- (gene_info$end_position - gene_info$start_position)
-gene_info <- gene_info[-c(2:3)]
-colnames(gene_info)[3] <- "go_name"
-head(gene_info)
+
+
+
+###iDEA
+#calculate variance
+#Here the first results(only two cell types) is used!!
+pvalue <- results[,2] #### the pvalue column
+zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
+fc <- results[,1] ## the fold change column
+se_beta <- abs(fc/zscore) ## to approximate the standard error of beta
+var = se_beta^2  ### square 
+summary = data.frame(fc = fc,variance = var)# Summary is a matrix of fold change and variance of each gene
+#get annotation data
+#know how many go terms we have
+length(unique(gene_info$go_name))#2768
+annotation<-matrix(0,nrow =nrow(summary) ,ncol = 2768)
+rownames(annotation)<-rownames(summary)
+colnames(annotation)<-unique(gene_info$go_name)
+for (i in 1:nrow(annotation)) {
+  for (j in 1:ncol(annotation)) {
+    index<-which(gene_info$wbps_gene_id==rownames(annotation)[i])
+    for (k in 1:length(index)) {
+      if(gene_info$go_name[k]==colnames(annotation)[j]) {
+        annotation[i,j]=1
+    }
+    
+    }
+  }
+ 
+}
+
+#install iDEA package
+devtools::install_github('xzhoulab/iDEA')
+library(iDEA)
+#create idea object
+idea<-CreateiDEAObject(summary,annotation)
+#Fit the model
+idea <- iDEA.fit(idea)
+#correct p-values
+idea <- iDEA.louis(idea)
+#get output
+idea@gsea
+
+
+## Generalize the small test to all possible combinations of cell types
+# Generate all combinations of numbers from 1 to the number of cell types, taken 2 at a time
+combinations <- expand.grid(1:length(unique_cell_types), 1:length(unique_cell_types))
+head(combinations)
+combinations <- combinations[combinations$Var1 != combinations$Var2,]
+head(combinations)
+nrow((combinations)) # number of combinations
+
+#Until now it's just for comparison of two cell types, so the following code is for adding the iDea analysis to the "for loop" for several pair-wise comparisons.
+# Create a list for log fold change + p-value from BPSC results
+results <- list()
+results_iDEA<-list()
+for (i in 1:nrow(combinations)){
+  #Define the two groups to be compared (Remember of remove 1:20 when we run it for the whole data containing all the cells in a time bin!!!)
+  control.mat=sce_cpm[1:20,cell_indices[[combinations[i,1]]]]
+  treated.mat=sce_cpm[1:20,cell_indices[[combinations[i,2]]]]
+  #Create a data set by merging the control group and the treated group
+  bp.mat=cbind(control.mat,treated.mat)
+  rownames(bp.mat)=c(1:nrow(bp.mat))
+  colnames(bp.mat)=c(1:ncol(bp.mat))
+  group=c(rep(1,ncol(control.mat)),rep(2,ncol(treated.mat)))
+  #Run BPglm for differential expression analysis
+  res=BPglm(data=bp.mat, controlIds=which(lapply(group, as.numeric)==1), design=model.matrix(~group), coef=2, estIntPar=FALSE, useParallel=FALSE)
+  
+  # Use MAST to compute logFC based on the raw counts
+  control.countData=sce_filtered[1:20,cell_indices[[combinations[i,1]]]]
+  treated.countData=sce_filtered[1:20,cell_indices[[combinations[i,2]]]]
+  countData <- cbind(control.countData,treated.countData)
+  cellType <- as.data.frame(rep(c(1,2), c(ncol(control.countData),ncol(treated.countData))))
+  colnames(cellType) <- "CellType"
+  colData(countData) <- cbind(colData(countData),cellType)
+  colData(countData)$CellType<-factor(colData(countData)$CellType)
+  countData<-SceToSingleCellAssay(countData, class = "SingleCellAssay",check_sanity = FALSE)
+  zlmCond <- zlm(~cellType, countData)
+  logFC<-getLogFC(zlmCond)[,c(1,3)]
+  
+  # Log fold change + p-value from BPSC
+  PVAL<-as.data.frame(res$PVAL)
+  result <- cbind(logFC,res$PVAL)
+  colnames(results) <- c('gene','logFC','P-value')
+  results[[paste(unique_cell_types[combinations[i,1]],unique_cell_types[combinations[i,2]], sep=" vs. ")]]=result
+  
+  #iDEA
+  #calculate variance
+  pvalue <- res$PVA
+  zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
+  se_beta <- abs(fc/zscore) ## to approximate the standard error of beta
+  var = se_beta^2  ### square 
+  summary = data.frame(fc = fc,variance = var)# Summary is a matrix of fold change and variance of each gene
+  #create idea object
+  idea<-CreateiDEAObject(summary,annotation)
+  #Fit the model
+  idea <- iDEA.fit(idea)
+  #correct p-values
+  idea <- iDEA.louis(idea)
+  #Save all results matrix in a list
+  results_iDEA[[i]]<-idea@gsea
+} 
+
+
+
+
+
+
