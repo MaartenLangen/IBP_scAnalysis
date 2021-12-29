@@ -176,6 +176,7 @@ head(gene_info)
 ###iDEA
 #calculate variance
 #Here the first results(only two cell types) is used!!
+
 pvalue <- results$`P-value` #### the pvalue column
 zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
 fc <- results$logFC ## the fold change column
@@ -193,12 +194,11 @@ for (i in 1:nrow(annotation)) {
     index<-which(gene_info$wbps_gene_id==rownames(annotation)[i])
     for (k in 1:length(index)) {
       if(gene_info$go_name_1006[k]==colnames(annotation)[j]) {
+        idea-package-implementation
         annotation[i,j]=1
-    }
-    
+        }
     }
   }
- 
 }
 
 #install iDEA package
@@ -212,6 +212,7 @@ idea <- iDEA.fit(idea)
 idea <- iDEA.louis(idea)
 #get output
 idea@gsea
+
 #DE analysis of individual gene
 #with pre-selected genes
 pip = unlist(idea@de[["membrane"]]$pip)
@@ -284,10 +285,8 @@ for (i in 1:nrow(combinations)){
         if(gene_info$go_name_1006[k]==colnames(annotation)[j]) {
           annotation[i,j]=1
         }
-        
       }
-    }
-    
+    } 
   }
   
   #install iDEA package
@@ -299,15 +298,8 @@ for (i in 1:nrow(combinations)){
   idea <- iDEA.fit(idea)
   #correct p-values
   idea <- iDEA.louis(idea)
-  #get output
-  idea@gsea
-  #DE analysis of individual gene
-  #with pre-selected genes
-  pip = unlist(idea@de[["membrane"]]$pip)
-  head(pip)
-  #without pre-selected genes
-  idea <- iDEA.BMA(idea)
-  head(idea@BMA_pip)
+  #Save all results matrix in a list
+  results_iDEA[[i]]<-idea@gsea
 } 
 
 
