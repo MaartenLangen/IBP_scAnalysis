@@ -1,0 +1,24 @@
+$ wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
+$ bash Miniconda3-latest-Linux-x86_64.sh -b -p $VSC_DATA/miniconda3
+export PATH="${VSC_DATA}/miniconda3/bin:${PATH}"
+
+conda env create -f environment.yml
+
+source activate r41env
+
+conda install r-remotes
+R
+remotes::install_github("davismcc/scater") 
+remotes::install_github("nghiavtr/BPSC") 
+remotes::install_github("xzhoulab/iDEA") 
+remotes::install_github("statOmics/zingeR")
+q()
+
+conda config --add channels default
+conda config --add channels conda-forge
+conda config --add channels bioconda
+conda install bioconductor-biocparallel
+conda install -c bioconda bioconductor-biomart
+
+(https://hpcleuven.github.io/jupyterhub-doc/software_installation.html)
+Rscript -e 'IRkernel::installspec(prefix="${VSC_HOME}/.local/", name="r41env", displayname="r41env")'
